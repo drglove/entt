@@ -22,7 +22,7 @@ struct DuktapeRuntime {
 template<typename Comp>
 duk_ret_t set(duk_context *ctx, entt::DefaultRegistry &registry) {
     const auto entity = duk_require_uint(ctx, 0);
-    registry.accomodate<Comp>(entity);
+    registry.accommodate<Comp>(entity);
     return 0;
 }
 
@@ -31,7 +31,7 @@ duk_ret_t set<Position>(duk_context *ctx, entt::DefaultRegistry &registry) {
     const auto entity = duk_require_uint(ctx, 0);
     const auto x = duk_require_number(ctx, 2);
     const auto y = duk_require_number(ctx, 3);
-    registry.accomodate<Position>(entity, x, y);
+    registry.accommodate<Position>(entity, x, y);
     return 0;
 }
 
@@ -135,7 +135,6 @@ duk_ret_t get<DuktapeRuntime>(duk_context *ctx, entt::DefaultRegistry &registry)
     duk_push_string(ctx, runtime.components[type].c_str());
     duk_json_decode(ctx, -1);
 
-
     return 1;
 }
 
@@ -157,7 +156,7 @@ class DuktapeRegistry {
     template<typename... Comp>
     void reg() {
         using accumulator_type = int[];
-        accumulator_type acc = { (func[registry.component<Comp>()] = {
+        accumulator_type acc = { (func[registry.type<Comp>()] = {
                                      &::set<Comp>,
                                      &::unset<Comp>,
                                      &::has<Comp>,
@@ -186,7 +185,7 @@ class DuktapeRegistry {
         auto type = duk_require_uint(ctx, 1);
 
         if(type >= udef) {
-            type = registry.component<DuktapeRuntime>();
+            type = registry.type<DuktapeRuntime>();
         }
 
         assert(func.find(type) != func.cend());
@@ -236,34 +235,41 @@ public:
 
         duk_push_array(ctx);
 
-        dreg.registry.each([ctx, nargs, &pos, &dreg](auto entity) {
-            auto &registry = dreg.registry;
-            auto &func = dreg.func;
-            bool match = true;
+        std::vector<typename entt::DefaultRegistry::component_type> components;
+        std::vector<typename entt::DefaultRegistry::component_type> runtime;
 
-            for (duk_idx_t arg = 0; match && arg < nargs; arg++) {
-                auto type = duk_require_uint(ctx, arg);
+        for(duk_idx_t arg = 0; arg < nargs; arg++) {
+            auto type = duk_require_uint(ctx, arg);
 
-                if(type < udef) {
-                    assert(func.find(type) != func.cend());
-                    match = (registry.*func[type].test)(entity);
-                } else {
-                    const auto ctype = registry.component<DuktapeRuntime>();
-                    assert(func.find(ctype) != func.cend());
-                    match = (registry.*func[ctype].test)(entity);
-
-                    if(match) {
-                        auto &components = registry.get<DuktapeRuntime>(entity).components;
-                        match = (components.find(type) != components.cend());
-                    }
+            if(type < udef) {
+                components.push_back(type);
+            } else {
+                if(runtime.empty()) {
+                    components.push_back(dreg.registry.type<DuktapeRuntime>());
                 }
-            }
 
-            if(match) {
+                runtime.push_back(type);
+            }
+        }
+
+        auto view = dreg.registry.view(components.cbegin(), components.cend());
+
+        for(const auto entity: view) {
+            if(runtime.empty()) {
                 duk_push_uint(ctx, entity);
                 duk_put_prop_index(ctx, -2, pos++);
+            } else {
+                const auto &components = dreg.registry.get<DuktapeRuntime>(entity).components;
+                const auto match = std::all_of(runtime.cbegin(), runtime.cend(), [&components](const auto type) {
+                    return components.find(type) != components.cend();
+                });
+
+                if(match) {
+                    duk_push_uint(ctx, entity);
+                    duk_put_prop_index(ctx, -2, pos++);
+                }
             }
-        });
+        }
 
         return 1;
     }
@@ -287,7 +293,7 @@ const duk_function_list_entry js_DuktapeRegistry_methods[] = {
 void exportTypes(duk_context *ctx, entt::DefaultRegistry &registry) {
     auto exportType = [](auto *ctx, auto &registry, auto idx, auto type, const auto *name) {
         duk_push_string(ctx, name);
-        duk_push_uint(ctx, registry.template component<typename decltype(type)::type>());
+        duk_push_uint(ctx, registry.template type<typename decltype(type)::type>());
         duk_def_prop(ctx, idx, DUK_DEFPROP_HAVE_VALUE | DUK_DEFPROP_CLEAR_WRITABLE);
     };
 
@@ -331,8 +337,12 @@ TEST(Mod, Duktape) {
         FAIL();
     }
 
-    registry.create(Position{ 0., 0. }, Renderable{});
-    registry.create(Position{ 0., 0. });
+    const auto e0 = registry.create();
+    registry.assign<Position>(e0, 0., 0.);
+    registry.assign<Renderable>(e0);
+
+    const auto e1 = registry.create();
+    registry.assign<Position>(e1, 0., 0.);
 
     const char *s1 = ""
             "Registry.entities(Types.POSITION, Types.RENDERABLE).forEach(function(entity) {"

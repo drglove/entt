@@ -2,8 +2,10 @@
 #define ENTT_CORE_FAMILY_HPP
 
 
-#include<type_traits>
-#include<cstddef>
+#include <type_traits>
+#include <cstddef>
+#include <atomic>
+#include "../config/config.h"
 
 
 namespace entt {
@@ -18,14 +20,11 @@ namespace entt {
  */
 template<typename...>
 class Family {
-    static std::size_t identifier() noexcept {
-        static std::size_t value = 0;
-        return value++;
-    }
+    static std::atomic<std::size_t> identifier;
 
     template<typename...>
-    static std::size_t family() noexcept {
-        static const std::size_t value = identifier();
+    static std::size_t family() ENTT_NOEXCEPT {
+        static const std::size_t value = identifier.fetch_add(1);
         return value;
     }
 
@@ -38,10 +37,14 @@ public:
      * @return Statically generated unique identifier for the given type.
      */
     template<typename... Type>
-    static family_type type() noexcept {
+    inline static family_type type() ENTT_NOEXCEPT {
         return family<std::decay_t<Type>...>();
     }
 };
+
+
+template<typename... Types>
+std::atomic<std::size_t> Family<Types...>::identifier{};
 
 
 }

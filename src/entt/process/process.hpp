@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <functional>
 #include <utility>
+#include "../config/config.h"
 
 
 namespace entt {
@@ -21,6 +22,7 @@ namespace entt {
  * * @code{.cpp}
  *   void update(Delta, void *);
  *   @endcode
+ *
  *   It's invoked once per tick until a process is explicitly aborted or it
  *   terminates either with or without errors. Even though it's not mandatory to
  *   declare this member function, as a rule of thumb each process should at
@@ -31,6 +33,7 @@ namespace entt {
  * * @code{.cpp}
  *   void init(void *);
  *   @endcode
+ *
  *   It's invoked at the first tick, immediately before an update. The `void *`
  *   parameter is an opaque pointer to user data (if any) forwarded directly to
  *   the process during an update.
@@ -38,18 +41,21 @@ namespace entt {
  * * @code{.cpp}
  *   void succeeded();
  *   @endcode
+ *
  *   It's invoked in case of success, immediately after an update and during the
  *   same tick.
  *
  * * @code{.cpp}
  *   void failed();
  *   @endcode
+ *
  *   It's invoked in case of errors, immediately after an update and during the
  *   same tick.
  *
  * * @code{.cpp}
  *   void aborted();
  *   @endcode
+ *
  *   It's invoked only if a process is explicitly aborted. There is no guarantee
  *   that it executes in the same tick, this depends solely on whether the
  *   process is aborted immediately or not.
@@ -109,7 +115,7 @@ class Process {
     }
 
     template<State S, typename... Args>
-    void tick(char, tag<S>, Args&&...) {}
+    void tick(char, tag<S>, Args &&...) const ENTT_NOEXCEPT {}
 
 protected:
     /**
@@ -118,7 +124,7 @@ protected:
      * The function is idempotent and it does nothing if the process isn't
      * alive.
      */
-    void succeed() noexcept {
+    void succeed() ENTT_NOEXCEPT {
         if(alive()) {
             current = State::SUCCEEDED;
         }
@@ -130,7 +136,7 @@ protected:
      * The function is idempotent and it does nothing if the process isn't
      * alive.
      */
-    void fail() noexcept {
+    void fail() ENTT_NOEXCEPT {
         if(alive()) {
             current = State::FAILED;
         }
@@ -142,7 +148,7 @@ protected:
      * The function is idempotent and it does nothing if the process isn't
      * running.
      */
-    void pause() noexcept {
+    void pause() ENTT_NOEXCEPT {
         if(current == State::RUNNING) {
             current = State::PAUSED;
         }
@@ -154,7 +160,7 @@ protected:
      * The function is idempotent and it does nothing if the process isn't
      * paused.
      */
-    void unpause() noexcept {
+    void unpause() ENTT_NOEXCEPT {
         if(current  == State::PAUSED) {
             current  = State::RUNNING;
         }
@@ -165,7 +171,7 @@ public:
     using delta_type = Delta;
 
     /*! @brief Default destructor. */
-    ~Process() noexcept {
+    virtual ~Process() ENTT_NOEXCEPT {
         static_assert(std::is_base_of<Process, Derived>::value, "!");
     }
 
@@ -177,7 +183,7 @@ public:
      *
      * @param immediately Requests an immediate operation.
      */
-    void abort(bool immediately = false) noexcept {
+    void abort(const bool immediately = false) ENTT_NOEXCEPT {
         if(alive()) {
             current = State::ABORTED;
 
@@ -191,7 +197,7 @@ public:
      * @brief Returns true if a process is either running or paused.
      * @return True if the process is still alive, false otherwise.
      */
-    bool alive() const noexcept {
+    bool alive() const ENTT_NOEXCEPT {
         return current == State::RUNNING || current == State::PAUSED;
     }
 
@@ -199,7 +205,7 @@ public:
      * @brief Returns true if a process is already terminated.
      * @return True if the process is terminated, false otherwise.
      */
-    bool dead() const noexcept {
+    bool dead() const ENTT_NOEXCEPT {
         return current == State::FINISHED;
     }
 
@@ -207,7 +213,7 @@ public:
      * @brief Returns true if a process is currently paused.
      * @return True if the process is paused, false otherwise.
      */
-    bool paused() const noexcept {
+    bool paused() const ENTT_NOEXCEPT {
         return current == State::PAUSED;
     }
 
@@ -215,7 +221,7 @@ public:
      * @brief Returns true if a process terminated with errors.
      * @return True if the process terminated with errors, false otherwise.
      */
-    bool rejected() const noexcept {
+    bool rejected() const ENTT_NOEXCEPT {
         return stopped;
     }
 
@@ -224,7 +230,7 @@ public:
      * @param delta Elapsed time.
      * @param data Optional data.
      */
-    void tick(Delta delta, void *data = nullptr) {
+    void tick(const Delta delta, void *data = nullptr) {
         switch (current) {
         case State::UNINITIALIZED:
             tick(0, tag<State::UNINITIALIZED>{}, data);
@@ -312,7 +318,7 @@ struct ProcessAdaptor: Process<ProcessAdaptor<Func, Delta>, Delta>, private Func
      * @param args Parameters to use to initialize the actual process.
      */
     template<typename... Args>
-    ProcessAdaptor(Args&&... args)
+    ProcessAdaptor(Args &&... args)
         : Func{std::forward<Args>(args)...}
     {}
 
@@ -321,8 +327,8 @@ struct ProcessAdaptor: Process<ProcessAdaptor<Func, Delta>, Delta>, private Func
      * @param delta Elapsed time.
      * @param data Optional data.
      */
-    void update(Delta delta, void *data) {
-        Func::operator()(delta, data, [this](){ this->succeed(); }, [this](){ this->fail(); });
+    void update(const Delta delta, void *data) {
+        Func::operator()(delta, data, [this]() { this->succeed(); }, [this]() { this->fail(); });
     }
 };
 
